@@ -25,7 +25,10 @@ import streamlit as st
 # ----------------------------------------------------------------------------
 # 1. SETTINGS  (change things here, not deep in the code)
 # ----------------------------------------------------------------------------
-st.set_page_config(page_title="Dean's List with Distinction", page_icon="🎓")
+BASE_DIR = Path(__file__).parent
+LOGO_PATH = BASE_DIR / "kfupm_logo.png"   # put the logo file next to app.py
+st.set_page_config(page_title="Dean's List with Distinction",
+                   page_icon=str(LOGO_PATH) if LOGO_PATH.exists() else "🎓")
 
 DB_PATH = "deanslist.db"          # SQLite database file (created automatically)
 UPLOAD_DIR = Path("uploads")      # evidence files are saved here
@@ -516,7 +519,13 @@ def research_block(p, where):
 # 5. STUDENT FORM PAGE
 # ----------------------------------------------------------------------------
 def student_form_page():
-    st.title(f"Dean's List with Distinction — Extracurricular Activity Submission Form — {TERM}")
+    # Logo + title side by side (on phones they stack automatically)
+    col_logo, col_title = st.columns([1, 5])
+    with col_logo:
+        if LOGO_PATH.exists():
+            st.image(str(LOGO_PATH), width=110)
+    with col_title:
+        st.title(f"Dean's List with Distinction — Extracurricular Activity Submission Form — {TERM}")
     st.info(
         "Use this form to report verified extracurricular activities completed during the "
         "academic semester selected below. All activities must relate to that same semester "
