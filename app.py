@@ -320,8 +320,7 @@ def leadership_block(p, where, major: bool):
     org = dropdown("Organization, team, committee or event", ORG_DESC, ORG_OPTIONS,
                    f"{p}_org", other=ORG_OTHER)
     resp = multiselect("Responsibilities",
-                       "Select what you actually did in this role. "
-                       "Example: Planning activities or events.",
+                       "Select what you actually did in this role.",
                        LEADERSHIP_RESPONSIBILITIES, f"{p}_resp")
     unit = dropdown("Verifying university unit", UNIT_DESC, VERIFYING_UNITS, f"{p}_unit")
     ver = text("Verifier name or email", VERIFIER_DESC, f"{p}_ver", VERIFIER_PLACEHOLDER)
