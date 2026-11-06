@@ -1,6 +1,6 @@
 """
 KFUPM Dean's List with Distinction - Extracurricular Submission & Review
-Streamlit version 2 (supervisor comments applied).
+Streamlit version 3 (all supervisor comments applied).
 
 Run with:   streamlit run app.py
 
@@ -12,6 +12,7 @@ Points are NOT shown to students. They are still stored and used by the
 Reviewer Dashboard to calculate the 5-point result (Committee Report, s.3.3).
 """
 
+import io
 import os
 import re
 import sqlite3
@@ -56,6 +57,7 @@ CAPS = {
 DECISIONS = ["Pending", "Verified", "Further evidence required", "Rejected"]
 
 OTHER = "Other (please specify)"   # added to the end of every dropdown
+ORG_OTHER = "Other (please specify name)"   # used in the organization-type dropdowns
 
 # --- Dropdown lists ---------------------------------------------------------
 # Options containing "(specify" make a text box appear so the student can type
@@ -72,41 +74,13 @@ VERIFYING_UNITS = [
     "Organizing University Unit",
 ]
 
-PROFESSIONAL_CHAPTERS = [
-    "ASCE Student Chapter",
-    "ASHRAE Student Chapter",
-    "ACI Student Chapter",
-    "PMI Student Chapter",
-    "IEEE Student Branch",
-    "AIAS Chapter (Architecture Students)",
-    "IIDA Student Chapter (Interior Design)",
-    "CIOB Student Chapter",
-    "RICS Student Chapter",
-]
+# Organization dropdowns (leadership roles): one option, plus "Other"
+ORG_OPTIONS = ["Organization/Society student chapter (specify name)"]
+ORG_DESC = ("Select the exact official body where you held this role. "
+            "Example: University-recognized student club, Name: AECM Club.")
 
 MAJOR_ROLES = ["President", "Vice President", "Team Captain", "Student Council Member"]
 SUPPORT_ROLES = ["Committee Lead", "Event Organizer", "Project Lead"]
-
-MAJOR_ORGS = (
-    ["Student Council"] + PROFESSIONAL_CHAPTERS + [
-        "University-recognized student club (specify name)",
-        "Official University sports team (specify sport)",
-        "University committee (specify name)",
-    ]
-)
-SUPPORT_ORGS = (
-    ["Student Council"] + PROFESSIONAL_CHAPTERS + [
-        "University-recognized student club (specify name)",
-        "University event or initiative (specify name)",
-        "University committee (specify name)",
-        "University project team (specify name)",
-    ]
-)
-ENGAGEMENT_ORGS = PROFESSIONAL_CHAPTERS + [
-    "University-recognized student club (specify name)",
-    "Department student club or society (specify name)",
-    "Official University sports team (specify sport)",
-]
 
 LEADERSHIP_RESPONSIBILITIES = [
     "Leading or supervising a team",
@@ -116,10 +90,8 @@ LEADERSHIP_RESPONSIBILITIES = [
     "Representing students or an organization",
     "Making or implementing decisions",
 ]
-ENGAGEMENT_TYPES = ["University-recognized club", "Student organization",
-                    "Official University sports team"]
-ENGAGEMENT_ROLES = ["Active member", "Team member", "Club member", "Regular participant"]
-ENGAGEMENT_PARTICIPATION = [
+ENGAGEMENT_TYPES = ["Student Organization/Society"]
+ENGAGEMENT_ROLE_OPTIONS = [
     "Attended regular meetings or training",
     "Participated in organized activities",
     "Contributed to club or team tasks",
@@ -261,17 +233,17 @@ def text(label, desc, key, placeholder=None) -> str:
                          label_visibility="collapsed").strip()
 
 
-def dropdown(label, desc, options, key) -> str:
+def dropdown(label, desc, options, key, other=OTHER) -> str:
     """Dropdown that always ends with 'Other'. Returns '' if incomplete."""
     lbl(label, desc)
-    picked = st.selectbox(label, list(options) + [OTHER], index=None,
+    picked = st.selectbox(label, list(options) + [other], index=None,
                           placeholder="Select...", key=k(key),
                           label_visibility="collapsed")
     if picked is None:
         return ""
-    if picked == OTHER:
-        return st.text_input("Please specify", key=k(key + "_x"),
-                             placeholder="Type here").strip()
+    if picked == other:
+        return st.text_input("Please specify the name" if "name" in other else "Please specify",
+                             key=k(key + "_x"), placeholder="Type here").strip()
     if "(specify" in picked:
         base = picked.split(" (specify")[0]
         hint = picked.split("(specify")[1].rstrip(")").strip()
@@ -339,21 +311,14 @@ def repeat_entries(key, first_q, more_q, entry_title, block_fn) -> list:
 def leadership_block(p, where, major: bool):
     if major:
         role = dropdown("Your role",
-                        "Select the major position you held during " + TERM +
-                        ". Example: Club President.", MAJOR_ROLES, f"{p}_role")
-        org = dropdown("Organization, team, committee or event",
-                       "Select the exact official body where you held this role. "
-                       "Example: ASCE Student Chapter. If it is not listed, choose "
-                       "Other and type its exact official name.", MAJOR_ORGS, f"{p}_org")
+                        "Select the major position you held during " + TERM + ".",
+                        MAJOR_ROLES, f"{p}_role")
     else:
         role = dropdown("Your role",
-                        "Select the supporting position you held during " + TERM +
-                        ". Example: Event Organizer.", SUPPORT_ROLES, f"{p}_role")
-        org = dropdown("Organization, team, committee or event",
-                       "Select the exact official body or event where you held this "
-                       "supporting role. Example: ASHRAE Student Chapter. If it is not "
-                       "listed, choose Other and type its exact official name.",
-                       SUPPORT_ORGS, f"{p}_org")
+                        "Select the supporting position you held during " + TERM + ".",
+                        SUPPORT_ROLES, f"{p}_role")
+    org = dropdown("Organization, team, committee or event", ORG_DESC, ORG_OPTIONS,
+                   f"{p}_org", other=ORG_OTHER)
     resp = multiselect("Responsibilities",
                        "Select what you actually did in this role. "
                        "Example: Planning activities or events.",
@@ -372,35 +337,31 @@ def leadership_block(p, where, major: bool):
 
 def engagement_block(p, where):
     atype = dropdown("Active engagement type",
-                     "Select the kind of group you belong to. Examples: Student "
-                     "organization (ASCE Student Chapter), Official University sports team.",
-                     ENGAGEMENT_TYPES, f"{p}_type")
-    org = dropdown("Club, organization or team name",
-                   "Select the exact official name of the group. If it is not listed, "
-                   "choose Other and type its exact official name.",
-                   ENGAGEMENT_ORGS, f"{p}_org")
-    role = dropdown("Membership or role",
-                    "Select your registered status. Example: Active member.",
-                    ENGAGEMENT_ROLES, f"{p}_role")
-    part = multiselect("Regular participation",
-                       "Select how you took part throughout the semester. "
-                       "Example: Attended regular meetings or training.",
-                       ENGAGEMENT_PARTICIPATION, f"{p}_part")
+                     "Select the kind of group you belong to. "
+                     "Example: Student Organization/Society.",
+                     ENGAGEMENT_TYPES, f"{p}_type", other=ORG_OTHER)
+    org = text("Club, organization or team name",
+               "Write the exact official name of the club, organization or team.",
+               f"{p}_org", "Write here")
+    role = multiselect("Role",
+                       "Select what describes your role in this group during the "
+                       "semester. You may select more than one.",
+                       ENGAGEMENT_ROLE_OPTIONS, f"{p}_part")
     unit = dropdown("Verifying university unit", UNIT_DESC, VERIFYING_UNITS, f"{p}_unit")
     ver = text("Verifier name or email", VERIFIER_DESC, f"{p}_ver", VERIFIER_PLACEHOLDER)
     ev = evidence_field("Membership record or letter from the faculty advisor, coach or the "
                         "Deanship of Student Affairs confirming regular participation "
                         "during the semester.", f"{p}_ev")
     return make_activity(
-        "Active Engagement", where, 2, org, join(atype, role), part, join(unit, ver), ev,
+        "Active Engagement", where, 2, org, atype, f"Role: {role}" if role else "",
+        join(unit, ver), ev,
         {"Active engagement type": atype, "Club, organization or team name": org,
-         "Membership or role": role, "Regular participation": part,
-         "Verifying university unit": unit, "Verifier name or email": ver})
+         "Role": role, "Verifying university unit": unit, "Verifier name or email": ver})
 
 
 def participation_block(p, where):
     ptype = dropdown("Participation type",
-                     "Select the kind of activity. Examples: Workshop, Seminar, Exhibition.",
+                     "Select the kind of activity.",
                      PARTICIPATION_TYPES, f"{p}_type")
     title = text("Activity title",
                  "Write the title exactly as it appears on your certificate or attendance "
@@ -455,8 +416,8 @@ def competition_block(p, where):
 def community_block(p, where):
     ctype = dropdown("Type",
                      "Select the kind of service. Examples: Volunteering at a University "
-                     "event, Outreach programme in a school, Social initiative such as a "
-                     "charity drive.", COMMUNITY_TYPES, f"{p}_type")
+                     "event, Outreach programme in a school, Social initiative (a "
+                     "campaign that helps people in need).", COMMUNITY_TYPES, f"{p}_type")
     title = text("Activity title",
                  "Write the official name of the activity as it appears on your letter or "
                  "certificate. Example: Ramadan Food Distribution Campaign.", f"{p}_title",
@@ -490,8 +451,7 @@ def research_block(p, where):
                      "Select the kind of activity. Examples: Research project, Innovation "
                      "challenge, Publication.", RESEARCH_TYPES, f"{p}_type")
     title = text("Official title",
-                 "Write the official title of the project, challenge or publication. "
-                 "Example: Thermal Performance of Recycled Aggregate Concrete.",
+                 "Write the official title of the project, challenge or publication.",
                  f"{p}_title", "Official title")
     contrib = multiselect("Your contribution",
                           "Select what you contributed. Examples: Data collection, "
@@ -554,9 +514,7 @@ def student_form_page():
     st.header("1. Leadership")
     st.caption("Leadership means an elected or appointed position with defined "
                "responsibilities in a University-recognized organization, team, committee "
-               "or event (Example: Club President, Vice President, Team Captain).  \n"
-               "If you held more than one role in the same activity (for example, club "
-               "president and club member), report only the highest role.")
+               "or event (Example: Club President, Vice President, Team Captain).")
 
     st.subheader("Major Leadership Role")
     st.caption("A top elected or appointed position with overall responsibility. "
@@ -568,9 +526,10 @@ def student_form_page():
         "Major Leadership Role", lambda p, w: leadership_block(p, w, True))
 
     st.subheader("Supporting Leadership Role")
-    st.caption("Report a separate supporting role only. If it is the same activity as the "
-               "major role, it will not receive additional points. Examples: Committee "
-               "Lead, Event Organizer, Project Lead.")
+    st.caption("Report a separate supporting role only (Examples: Committee Lead, Event "
+               "Organizer, Project Lead).  \n"
+               "If it is the same activity as the major role, it will not receive "
+               "additional points.")
     activities += repeat_entries(
         "support", "Do you have a supporting leadership role to report?",
         "Do you have any additional supporting leadership role to report?",
@@ -581,9 +540,7 @@ def student_form_page():
     st.caption("Registered membership in a University-recognized club, student organization "
                "or official University sports team, with regular participation throughout "
                "the semester. Examples: active member of the ASCE Student Chapter, member "
-               "of an official University football team.  \n"
-               "If you also held a leadership role in the same group, report it under "
-               "1. Leadership only.")
+               "of an official University football team.")
     activities += repeat_entries(
         "active", "Do you have an active engagement to report?",
         "Do you have any additional active engagement to report?",
@@ -594,8 +551,7 @@ def student_form_page():
     st.caption("Attendance at, or one-time participation in, a University-recognized event, "
                "workshop, seminar, exhibition or competition. Examples: attending a BIM "
                "workshop, visiting a design exhibition, taking part in a competition "
-               "without placing.  \nIf you won or placed in a competition, report it "
-               "under 4. Competitions and Achievements instead.")
+               "without placing.")
     activities += repeat_entries(
         "part", "Do you have a participation activity to report?",
         "Do you have any additional participation activity to report?",
@@ -615,8 +571,8 @@ def student_form_page():
     st.header("5. Community Service")
     st.caption("Volunteering in a service, outreach or social initiative organized or "
                "endorsed by the University. Examples: volunteering at a University "
-               "community event, a school outreach programme, a charity drive endorsed by "
-               "Student Affairs.")
+               "community event, a school outreach programme, collecting donations for "
+               "people in need, approved by the University.")
     activities += repeat_entries(
         "comm", "Do you have a community service activity to report?",
         "Do you have any additional community service activity to report?",
@@ -709,23 +665,42 @@ def save_submission(name, sid, email, dept, activities) -> str:
 # ----------------------------------------------------------------------------
 # 6. REVIEWER DASHBOARD
 # ----------------------------------------------------------------------------
-def build_summary() -> pd.DataFrame:
-    """One row per student submission, with capped points and eligibility result."""
+def load_rows():
+    """Read all submissions and activities from the database."""
     with get_conn() as conn:
         subs = pd.read_sql("SELECT * FROM submissions ORDER BY timestamp DESC", conn)
-        acts = pd.read_sql("SELECT * FROM activities", conn)
+        acts = pd.read_sql("SELECT * FROM activities ORDER BY id", conn)
+    subs = subs.rename(columns={"timestamp": "created_at", "semester": "term"})
+    return subs.to_dict("records"), acts.to_dict("records")
+
+
+def _clean_time(value) -> str:
+    return str(value)[:19].replace("T", " ")
+
+
+def build_summary(subs_rows, acts_rows) -> pd.DataFrame:
+    """One row per student submission, with capped points and eligibility result."""
+    subs = pd.DataFrame(subs_rows)
+    acts = pd.DataFrame(acts_rows)
+    if subs.empty:
+        return pd.DataFrame()
+    if acts.empty:
+        acts = pd.DataFrame(columns=["submission_id", "category", "decision", "points",
+                                     "reviewed_by", "review_date"])
     rows = []
     for _, s in subs.iterrows():
         a = acts[acts.submission_id == s["id"]]
-        row = {"Submission ID": s["id"], "Timestamp": s["timestamp"], "Student Name": s["name"],
-               "Student ID": s["student_id"], "Email": s["email"],
-               "Department": s["department"], "Term": s["semester"]}
+        row = {"Submission ID": s["id"], "Timestamp": _clean_time(s["created_at"]),
+               "Student Name": s["name"], "Student ID": s["student_id"],
+               "Email": s["email"], "Department": s["department"], "Term": s["term"]}
         total = 0
         for cat, cap in CAPS.items():
             verified = a[(a.category == cat) & (a.decision == "Verified")].points.sum()
             row[cat] = min(cap, int(verified))
             total += row[cat]
         row["Total Verified Points"] = total
+        row["Activities Submitted"] = len(a)
+        row["Activities Verified"] = int((a.decision == "Verified").sum())
         decisions = set(a.decision)
         if "Pending" in decisions:
             status = "Pending review"
@@ -736,12 +711,62 @@ def build_summary() -> pd.DataFrame:
         row["Review Status"] = status
         if status != "Review complete":
             row["Eligibility Result"] = status
-        elif total >= THRESHOLD:
-            row["Eligibility Result"] = "Extracurricular requirement satisfied"
         else:
-            row["Eligibility Result"] = "Extracurricular requirement not satisfied"
+            row["Eligibility Result"] = "Satisfied" if total >= THRESHOLD else "Not satisfied"
+        dates = sorted(d for d in a.review_date if d)
+        row["Last Review Date"] = _clean_time(dates[-1]) if dates else ""
+        row["Reviewed By"] = ", ".join(sorted({r for r in a.reviewed_by if r}))
         rows.append(row)
     return pd.DataFrame(rows)
+
+
+def build_details(subs_rows, acts_rows) -> pd.DataFrame:
+    """One row per reported activity, with the student's details and the review outcome."""
+    subs = pd.DataFrame(subs_rows)
+    acts = pd.DataFrame(acts_rows)
+    cols = ["Submission ID", "Timestamp", "Student Name", "Student ID", "Email", "Department",
+            "Term", "Activity ID", "Category", "Role / Type", "Activity / Organization",
+            "Details", "Verification Source", "Available Points", "Review Decision",
+            "Points Counted", "Reviewer Comments", "Reviewed By", "Review Date",
+            "Evidence File"]
+    if subs.empty or acts.empty:
+        return pd.DataFrame(columns=cols)
+    subs = subs.rename(columns={"id": "submission_id", "created_at": "Timestamp",
+                                "name": "Student Name", "student_id": "Student ID",
+                                "email": "Email", "department": "Department",
+                                "term": "Term"})
+    subs["Timestamp"] = subs["Timestamp"].map(_clean_time)
+    df = acts.merge(subs, on="submission_id", how="left")
+    df["Points Counted"] = df.apply(
+        lambda r: r["points"] if r["decision"] == "Verified" else 0, axis=1)
+    df["Review Date"] = df["review_date"].map(lambda v: _clean_time(v) if v else "")
+    df["evidence_path"] = df["evidence_path"].map(lambda p: Path(str(p)).name)
+    df = df.rename(columns={
+        "submission_id": "Submission ID", "id": "Activity ID", "category": "Category",
+        "role": "Role / Type", "title": "Activity / Organization", "details": "Details",
+        "verifier": "Verification Source", "points": "Available Points",
+        "decision": "Review Decision", "comments": "Reviewer Comments",
+        "reviewed_by": "Reviewed By", "evidence_path": "Evidence File"})
+    df = df.sort_values(["Timestamp", "Activity ID"], ascending=[False, True])
+    return df[cols]
+
+
+def to_excel(summary: pd.DataFrame, details: pd.DataFrame) -> bytes:
+    """Full record for the archive: one sheet per student, one sheet per activity."""
+    from openpyxl.styles import Font, PatternFill
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        summary.to_excel(writer, sheet_name="Student Summary", index=False)
+        details.to_excel(writer, sheet_name="Activity Details", index=False)
+        for ws in writer.book.worksheets:
+            ws.freeze_panes = "A2"
+            for cell in ws[1]:
+                cell.font = Font(bold=True)
+                cell.fill = PatternFill("solid", fgColor="E8E8E8")
+            for col in ws.columns:
+                longest = max((len(str(c.value)) for c in col if c.value is not None), default=8)
+                ws.column_dimensions[col[0].column_letter].width = min(max(longest + 2, 12), 50)
+    return buf.getvalue()
 
 
 def reviewer_page():
@@ -764,7 +789,9 @@ def reviewer_page():
     reviewer = st.text_input("Your name / email (recorded with each decision)")
     tab_review, tab_summary = st.tabs(["Review activities", "Student summary"])
 
-    summary = build_summary()
+    subs_rows, acts_rows = load_rows()
+    summary = build_summary(subs_rows, acts_rows)
+    details = build_details(subs_rows, acts_rows)
 
     # ---- Tab 1: review each activity -------------------------------------------
     with tab_review:
@@ -828,9 +855,15 @@ def reviewer_page():
         else:
             st.caption(f"Points are capped per category. Threshold: {THRESHOLD} verified points.")
             st.dataframe(summary, hide_index=True)
-            st.download_button("⬇️ Download summary (CSV)",
-                               summary.to_csv(index=False).encode("utf-8-sig"),
-                               file_name="student_summary.csv", mime="text/csv")
+            st.caption("The Excel file below is the full record: sheet 1 has one row per "
+                       "student, sheet 2 has every reported activity with its decision, "
+                       "reviewer, date and comments.")
+            st.download_button(
+                "⬇️ Download full record (Excel)",
+                to_excel(summary, details),
+                file_name=f"dean_list_{TERM.replace(' ', '_')}_full_record_"
+                          f"{datetime.now():%Y-%m-%d}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
 # ----------------------------------------------------------------------------
